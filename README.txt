@@ -1,4 +1,4 @@
-MEIN TRAINING – PWA 1.0
+MEIN TRAINING – PWA 1.1
 
 ENTHALTEN
 - Push/Pull/Beine-Plan mit deinen ursprünglichen Satzwerten als Referenz (keine erfundene historische Trainingseinheit)
@@ -30,3 +30,13 @@ WICHTIGE GRENZEN
 - Regelbasierte Hinweise sind keine KI-Cloud-Anbindung; für echte Chat-KI wäre ein separater Dienst erforderlich.
 - Die e1RM-Berechnung gilt nur eingeschränkt bei Kabelzügen, Dips und Klimmzügen. Bandhilfe ist nicht als fester kg-Wert angesetzt.
 - Benutze die App nicht als Ersatz für ärztliche Einschätzung bei Schmerzen.
+
+
+UPDATE VON VERSION 1.0 AUF 1.1
+- Vorher auf dem iPhone unter Einstellungen ein JSON-Backup erstellen und in Dateien/iCloud Drive sichern.
+- Alle Dateien aus dem Ordner training-app ins bestehende GitHub-Repository hochladen und gleichnamige Dateien überschreiben.
+- Die App aktualisiert sich nach der Veröffentlichung; bei Bedarf komplett schließen und erneut öffnen.
+- Bestehende lokale Einheiten bleiben unter derselben GitHub-Pages-Adresse erhalten. NICHT das Repository umbenennen.
+- Push enthält jetzt zusätzlich 2 Sätze Seitheben, Pull behält 2 Sätze.
+- Unter Einstellungen > KI-Coach kann ein lesbarer Bericht geteilt/kopiert oder als .txt exportiert werden.
+- Der Bericht wird NICHT automatisch an ChatGPT gesendet; bitte im Chat einfügen oder hochladen.

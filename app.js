@@ -5,7 +5,8 @@ const defaults={
     {id:'dips',name:'Dips',equipment:'Dip-Stangen',rest:240,kind:'bodyweight',reference:[[15,0],[9,20],[8,17.5],[9,15]],hint:'Zusatzgewicht; 0 kg = nur Körpergewicht'},
     {id:'ohp',name:'Overhead Press',equipment:'Langhantel',rest:240,kind:'weight',reference:[[20,20],[15,30],[14,35],[11,40]]},
     {id:'flys',name:'Flys',equipment:'Kabelzug',rest:180,kind:'weight',reference:[[7,27],[12,23],[10,23]]},
-    {id:'triceps',name:'Trizepsdrücken',equipment:'Kabelzug',rest:120,kind:'weight',reference:[[11,50],[9.5,50]],dropLast:true}
+    {id:'triceps',name:'Trizepsdrücken',equipment:'Kabelzug',rest:120,kind:'weight',reference:[[11,50],[9.5,50]],dropLast:true},
+    {id:'lateral_push',name:'Seitheben (abwechselnd)',equipment:'Kabelzug',rest:60,kind:'weight',reference:[[9,9],[8,9]],hint:'2 Sätze je Seite. Auf Push und Pull verteilt; Fortschritt über kontrollierte Wiederholungen.'}
   ],
   pull:[
     {id:'pullups',name:'Klimmzüge',equipment:'Klimmzugstange',rest:240,kind:'pullup',reference:[[8,0],[7,0],[6,0],[5,0]],hint:'Widerstandsband nach Farbe/Hersteller benennen – keine pauschale kg-Umrechnung'},
@@ -22,8 +23,21 @@ const defaults={
 const days={push:'Push',pull:'Pull',legs:'Beine'};
 function initial(){return {version:1,settings:{care:true,bands:['Leicht','Mittel','Stark'],weightUnit:'kg'},plan:structuredClone(defaults),sessions:[],draft:null};}
 function load(){try{const x=JSON.parse(localStorage.getItem(KEY)); if(x && x.version===1 && x.plan && Array.isArray(x.sessions))return x;}catch(e){}return initial();}
+// Einmalige, nicht destruktive Erweiterung bestehender Installationen: vorhandene
+// Trainingseinheiten und Entwürfe bleiben vollständig unverändert.
+function migratePlan(){
+  if(!db.settings)db.settings={care:true,bands:['Leicht','Mittel','Stark'],weightUnit:'kg'};
+  if(!db.settings.pushLateralAdded){
+    if(Array.isArray(db.plan?.push) && !db.plan.push.some(e=>e.id==='lateral_push')){
+      db.plan.push.push(structuredClone(defaults.push.find(e=>e.id==='lateral_push')));
+    }
+    db.settings.pushLateralAdded=true;
+    try{localStorage.setItem(KEY,JSON.stringify(db));}catch(e){}
+  }
+}
 let db=load(), tab='home', selectedDay='push', currentExercise=0, chartExercise='ohp', chartMetric='e1rm', editing=false;
 let timer={end:0,length:0,remaining:0,paused:false,beeped:false};
+migratePlan();
 const $=s=>document.querySelector(s);
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=x=>{const n=Number(x);return Number.isFinite(n)?n:0;};
@@ -89,17 +103,74 @@ function stats(){const all=Object.values(db.plan).flat();const ex=all.find(e=>e.
  ${points.length?`<canvas id="progressChart" class="chart" aria-label="Verlaufsdiagramm ${esc(labels[chartMetric])}"></canvas><div class="row between" style="margin-top:8px"><span class="hint">${points.length} Messpunkte</span><strong>${fmt(points.at(-1).y)}${chartMetric==='pain'?' / 10':chartMetric==='maxReps'?' Wdh.':' kg'}</strong></div>`:'<div class="notice">Für diese Kennzahl sind noch keine Werte gespeichert. Zeichne zuerst eine Trainingseinheit auf.</div>'}
  <div class="divider"></div><h3>Trainingshinweis</h3><p class="sub" style="margin:7px 0">${hintFor(ex.id)}</p><p class="hint">e1RM ist eine grobe rechnerische Schätzung. Für Klimmzüge und Dips mit Körpergewicht und Bandunterstützung sind reine Zusatzgewichtskennzahlen nur eingeschränkt sinnvoll. Vergleiche dort Wiederholungen und Bandart.</p></div>
  <div class="card"><h2>Trainingshistorie</h2>${db.sessions.length?db.sessions.slice().reverse().map((s,i)=>`<div class="history"><div><strong>${days[s.day]}</strong><div class="hint">${new Date(s.finished).toLocaleString('de-DE')} · ${s.exercises.reduce((a,e)=>a+e.sets.filter(x=>x.done).length,0)} Sätze</div></div>${btn('Details','history','small')}<input type="hidden" value="${s.id}"></div>`).join(''):'<p class="sub">Noch keine abgeschlossenen Einheiten.</p>'}</div>`;}
+function coachReport(){
+ const all=Object.values(db.plan).flat();
+ const lines=[
+  'MEIN TRAINING – BERICHT FÜR CHATGPT',
+  `Erstellt: ${new Date().toLocaleString('de-DE')}`,
+  `Modus: ${db.settings.care?'Schonmodus (keine Steigerungen erzwingen)':'Normaler Trainingsmodus'}`,
+  'Ziel: Schwerpunkt Schultern, Brust, Arme; Beine einmal wöchentlich. Training soll Spaß machen und langfristig durchhaltbar bleiben.',
+  'Hinweis: Schmerzen und RIR stets berücksichtigen; die Daten enthalten keine ärztliche Trainingsfreigabe.',
+  `Abgeschlossene Einheiten: ${db.sessions.length}`,
+  `Davon Push: ${db.sessions.filter(s=>s.day==='push').length}, Pull: ${db.sessions.filter(s=>s.day==='pull').length}, Beine: ${db.sessions.filter(s=>s.day==='legs').length}`,
+  '', 'AKTUELLER TRAININGSPLAN UND PAUSEN'
+ ];
+ for(const [day,exercises] of Object.entries(db.plan)){
+  lines.push(`${days[day]}:`);
+  for(const ex of exercises)lines.push(`- ${ex.name} | ${ex.equipment} | Pause ${ex.rest} Sekunden`);
+ }
+ lines.push('', 'TRAININGSHISTORIE (chronologisch; nur abgeschlossene Sätze)');
+ if(!db.sessions.length)lines.push('Bisher keine abgeschlossenen Einheiten.');
+ for(const session of db.sessions){
+  lines.push('', `${new Date(session.finished).toLocaleString('de-DE')} | ${days[session.day]} | Trainingsbeginn ${session.started||'unbekannt'}`);
+  for(const entry of session.exercises){
+   const ex=all.find(x=>x.id===entry.id);
+   const completed=entry.sets.filter(x=>x.done);
+   if(!completed.length && entry.pain==='' && !entry.notes)continue;
+   lines.push(`  ${ex?.name||entry.id} | Schmerz ${entry.pain===''?'nicht erfasst':entry.pain+'/10'}${entry.notes?' | Notiz: '+entry.notes:''}`);
+   completed.forEach((set,i)=>{
+    let label=`    Satz ${i+1}: ${set.reps} Wdh. × ${set.kg} kg (${set.type==='warmup'?'Aufwärmen':'regulär'})`;
+    if(set.rir!==''&&set.rir!=null)label+=` | RIR ${set.rir}`;
+    if(set.band)label+=` | Unterstützung: ${set.band}`;
+    if(set.band==='Maschine')label+=` (${set.assistance} kg)`;
+    if(set.drop)label+=` | direkt anschließender Dropsatz: ${set.drop.reps} × ${set.drop.kg} kg`;
+    lines.push(label);
+   });
+  }
+ }
+ if(db.draft)lines.push('', 'Hinweis: Eine noch laufende Einheit ist nicht Teil der abgeschlossenen Trainingshistorie.');
+ lines.push('', 'BITTE ANALYSIERE:',
+   '1. Trainingshäufigkeit und Kontinuität (einschließlich Push/Pull/Beine-Verteilung).',
+   '2. Progression pro Übung: Wiederholungen, Lasten, RIR und möglichst vergleichbare Satzbedingungen.',
+   '3. Schmerztrends, inklusive Warnzeichen für nötige Entlastung – keine Steigerung trotz Schmerzen empfehlen.',
+   '4. Konkrete, vorsichtige Vorschläge für die nächsten Einheiten; Spaß und Kontinuität haben Priorität.',
+   'Verwechsle Kabelzuglasten nicht mit freien Gewichten; berechne Bandunterstützung nicht als festen kg-Abzug.');
+ return lines.join('\n');
+}
+function coachDownload(){
+ const blob=new Blob([coachReport()],{type:'text/plain;charset=utf-8'});
+ const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='mein-training-ki-bericht-'+new Date().toISOString().slice(0,10)+'.txt';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);toast('KI-Bericht erstellt');
+}
+async function coachShare(){
+ const content=coachReport();
+ try{
+  if(navigator.share){await navigator.share({title:'Mein Trainingsbericht',text:content});return;}
+ }catch(e){if(e.name==='AbortError')return;}
+ try{await navigator.clipboard.writeText(content);toast('Bericht kopiert – hier in ChatGPT einfügen.');}
+ catch(e){const area=document.getElementById('coachText');if(area){area.value=content;area.focus();area.select();toast('Bericht markieren und kopieren.');}else coachDownload();}
+}
 function settings(){return `${header('Einstellungen','Dein Training bleibt unter deiner Kontrolle')}<div class="card"><h2>Trainingsmodus</h2><div class="switch" style="margin-top:14px"><input id="care" type="checkbox" ${db.settings.care?'checked':''}><div><strong>Schonmodus</strong><p class="hint">Keine Steigerungsempfehlungen; Schmerzverlauf im Fokus.</p></div></div><div class="notice">Eine App ersetzt keine medizinische Untersuchung. Bei wiederkehrenden Schmerzen keine Steigerungen erzwingen.</div></div>
  <div class="card"><h2>Pausenzeiten ändern</h2><p class="sub">Alle Angaben sind in Sekunden; Standardwerte entsprechen deinen Vorgaben.</p>${Object.entries(db.plan).map(([day,arr])=>`<h3 style="margin:13px 0 6px">${days[day]}</h3>${arr.map(e=>`<div class="row between" style="margin-bottom:10px"><span style="flex:1">${esc(e.name)}</span><input style="width:88px" type="number" min="0" step="15" data-rest="${e.id}" value="${e.rest}" aria-label="Pause ${esc(e.name)} in Sekunden"></div>`).join('')}`).join('')}</div>
  <div class="card"><h2>Deine Klimmzugbänder</h2><p class="sub">Farben, Bandnamen und Hersteller individuell eintragen. Jeweils ein Band pro Zeile.</p><textarea id="bands" rows="4" style="width:100%;padding:12px;background:#0c1525;color:white;border:1px solid var(--line);border-radius:10px">${esc(db.settings.bands.join('\n'))}</textarea>${btn('Bänder speichern','savebands','full')}</div>
+ <div class="card"><h2>KI-Coach – Bericht für ChatGPT</h2><p class="sub">Erstellt aus deiner gesamten abgeschlossenen Trainingshistorie einen verständlichen Text mit Übungen, Wiederholungen, Gewichten, RIR, Dropsätzen und Schmerzbewertungen. Nur du entscheidest, ob und wann du den Bericht teilst.</p><div class="stack">${btn('Bericht teilen / kopieren','coach-share','primary full')}${btn('Bericht als Textdatei herunterladen','coach-download','full')}</div><p class="hint" style="margin-top:10px">Keine automatische Übertragung an ChatGPT. Du kannst den Bericht hier in unseren Chat einfügen oder als Datei hochladen. Das JSON-Backup bleibt davon unabhängig.</p><textarea id="coachText" rows="3" readonly style="position:absolute;left:-9999px" aria-label="KI-Trainingsbericht"></textarea></div>
  <div class="card"><h2>Datensicherung</h2><p class="sub">Deine Daten werden lokal im Browser gespeichert. Löschen von Website-Daten, Gerätewechsel oder ein privater Browsermodus können sie entfernen. Bitte regelmäßig exportieren.</p><div class="stack">${btn('Backup als JSON herunterladen','export','primary full')}<label for="importFile" class="btn full" style="text-align:center;color:var(--text);margin:0">Backup importieren</label><input id="importFile" type="file" accept="application/json,.json" style="display:none"></div><p class="hint" style="margin-top:10px">Ein Import ersetzt den bisherigen lokalen Datenbestand. Speichere vorher ein Backup.</p></div>
- <div class="card"><h3>Über diese Version</h3><p class="hint">Version 1.0 · Offlinefähige PWA · Kein Konto, keine Cloud und keine kostenpflichtige KI. Trainingshinweise sind regelbasiert. iPhone-Töne und -Benachrichtigungen im Hintergrund sind browserabhängig.</p></div>`;}
+ <div class="card"><h3>Über diese Version</h3><p class="hint">Version 1.1 · Offlinefähige PWA · Kein Konto, keine Cloud und keine kostenpflichtige KI. Trainingshinweise sind regelbasiert. iPhone-Töne und -Benachrichtigungen im Hintergrund sind browserabhängig.</p></div>`;}
 function render(){const content={home,train,stats,settings}[tab]();$('#app').innerHTML=content+nav();if(tab==='stats'&&$('#progressChart'))draw();}
 function draw(){const c=$('#progressChart');if(!c)return;const exId=chartExercise;const entries=db.sessions.map(s=>({entry:s.exercises.find(e=>e.id===exId)})).filter(x=>x.entry);const key=chartMetric==='e1rm'?'maxE1rm':chartMetric;let pts=entries.map(x=>chartMetric==='pain'?(x.entry.pain===''?null:num(x.entry.pain)):summary(x.entry)[key]).filter(x=>x!==null);if(!pts.length)return;const width=c.clientWidth||320, height=180,dpr=window.devicePixelRatio||1;c.width=width*dpr;c.height=height*dpr;const ctx=c.getContext('2d');ctx.scale(dpr,dpr);ctx.clearRect(0,0,width,height);const pad={l:40,r:13,t:18,b:26},min=Math.min(...pts,0),max=Math.max(...pts,1),lo=chartMetric==='pain'?0:Math.max(0,min-(max-min)*.12),hi=chartMetric==='pain'?10:max+(max-lo)*.18||1;ctx.font='11px system-ui';ctx.fillStyle='#a7b4cb';ctx.strokeStyle='#35435b';for(let j=0;j<=4;j++){let y=pad.t+(height-pad.t-pad.b)*j/4;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(width-pad.r,y);ctx.stroke();ctx.fillText(fmt(hi-(hi-lo)*j/4),3,y+4);}const xy=pts.map((v,i)=>({x:pad.l+(width-pad.l-pad.r)*(pts.length===1?.5:i/(pts.length-1)),y:pad.t+(hi-v)/(hi-lo)*(height-pad.t-pad.b)}));ctx.strokeStyle='#6ee7b7';ctx.lineWidth=2.5;ctx.beginPath();xy.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke();ctx.fillStyle='#6ee7b7';xy.forEach(p=>{ctx.beginPath();ctx.arc(p.x,p.y,3.8,0,Math.PI*2);ctx.fill();});ctx.fillStyle='#a7b4cb';ctx.fillText('1',pad.l,height-7);ctx.fillText(String(pts.length),width-pad.r-13,height-7);}
 function updateProp(idx,prop,value){const {entry}=activeInfo();const s=entry.sets[idx];if(!s)return;if(prop.startsWith('drop.')){if(!s.drop)s.drop={reps:0,kg:0};s.drop[prop.split('.')[1]]=num(value);}else if(['reps','kg','assistance'].includes(prop))s[prop]=Math.max(0,num(value));else s[prop]=value;save();}
 function finish(){const d=db.draft;if(!d)return;const completed=d.exercises.reduce((a,e)=>a+e.sets.filter(s=>s.done).length,0);if(!completed){toast('Bitte mindestens einen Satz erfassen.');return;}if(!confirm(`Einheit mit ${completed} erfassten Sätzen abschließen?`))return;db.sessions.push({...d,id:String(Date.now()),finished:new Date().toISOString()});db.draft=null;timerStop();save();tab='stats';render();toast('Einheit gespeichert!');}
 function backup(){const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='mein-training-backup-'+new Date().toISOString().slice(0,10)+'.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1500);toast('Backup-Datei erstellt');}
-document.addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b)return;const a=b.dataset.action,v=b.dataset.value;switch(a){case'tab':tab=v;render();break;case'home':tab='home';render();break;case'stats':tab='stats';render();break;case'day':selectedDay=v;render();break;case'start':start();break;case'resume':tab='train';render();break;case'exercise':currentExercise=num(v);render();break;case'prev':currentExercise=Math.max(0,currentExercise-1);render();break;case'next':if(currentExercise<db.draft.exercises.length-1){currentExercise++;render();}else finish();break;case'addset':{const {entry,ex}=activeInfo();entry.sets.push(newSet(ex,entry.sets.length));save();render();break;}case'removeset':{const {entry}=activeInfo();if(entry.sets.length===1){toast('Mindestens ein Satz bleibt erhalten.');break;}if(!confirm('Diesen Satz entfernen?'))break;entry.sets.splice(num(v),1);save();render();break;}case'toggle':{const {entry,ex}=activeInfo(),s=entry.sets[num(v)];s.done=!s.done;save();if(s.done && entry.sets.some(x=>!x.done))timerStart(ex.rest);else render();break;}case'drop':{const {entry}=activeInfo(),s=entry.sets[num(v)];s.drop=s.drop?null:{reps:0,kg:0};save();render();break;}case'rest':timerStart(activeInfo().ex.rest);break;case'timer-stop':timerStop();break;case'timer-minus':case'timer-plus':{const diff=a==='timer-plus'?15:-15;if(timer.paused)timer.remaining=Math.max(0,timer.remaining+diff);else timer.end+=diff*1000;render();break;}case'timer-pause':if(timer.paused){timer.paused=false;timer.end=Date.now()+timer.remaining*1000;}else{timer.remaining=Math.max(0,Math.ceil((timer.end-Date.now())/1000));timer.paused=true;}render();break;case'finish':finish();break;case'discard':if(confirm('Laufende Einheit unwiderruflich verwerfen?')){db.draft=null;save();timerStop();tab='home';render();}break;case'savebands':{const bands=$('#bands').value.split('\n').map(x=>x.trim()).filter(Boolean).slice(0,30);if(!bands.length){toast('Bitte mindestens ein Band eintragen.');break;}db.settings.bands=[...new Set(bands)];save();toast('Bänder gespeichert');break;}case'export':backup();break;case'history':{const id=b.nextElementSibling?.value;const s=db.sessions.find(s=>s.id===id);if(s){alert(`${days[s.day]} · ${new Date(s.finished).toLocaleString('de-DE')}\n\n`+s.exercises.map(x=>{const ex=Object.values(db.plan).flat().find(e=>e.id===x.id);return `${ex?.name||x.id}: ${x.sets.filter(z=>z.done).map(z=>`${z.reps}×${z.kg}kg${z.band&&z.band!=='Ohne Unterstützung'?' ('+z.band+')':''}`).join(', ')}${x.pain!==''?' · Schmerz '+x.pain+'/10':''}${x.notes?' · '+x.notes:''}`;}).join('\n'));}break;}}});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b)return;const a=b.dataset.action,v=b.dataset.value;switch(a){case'tab':tab=v;render();break;case'home':tab='home';render();break;case'stats':tab='stats';render();break;case'day':selectedDay=v;render();break;case'start':start();break;case'resume':tab='train';render();break;case'exercise':currentExercise=num(v);render();break;case'prev':currentExercise=Math.max(0,currentExercise-1);render();break;case'next':if(currentExercise<db.draft.exercises.length-1){currentExercise++;render();}else finish();break;case'addset':{const {entry,ex}=activeInfo();entry.sets.push(newSet(ex,entry.sets.length));save();render();break;}case'removeset':{const {entry}=activeInfo();if(entry.sets.length===1){toast('Mindestens ein Satz bleibt erhalten.');break;}if(!confirm('Diesen Satz entfernen?'))break;entry.sets.splice(num(v),1);save();render();break;}case'toggle':{const {entry,ex}=activeInfo(),s=entry.sets[num(v)];s.done=!s.done;save();if(s.done && entry.sets.some(x=>!x.done))timerStart(ex.rest);else render();break;}case'drop':{const {entry}=activeInfo(),s=entry.sets[num(v)];s.drop=s.drop?null:{reps:0,kg:0};save();render();break;}case'rest':timerStart(activeInfo().ex.rest);break;case'timer-stop':timerStop();break;case'timer-minus':case'timer-plus':{const diff=a==='timer-plus'?15:-15;if(timer.paused)timer.remaining=Math.max(0,timer.remaining+diff);else timer.end+=diff*1000;render();break;}case'timer-pause':if(timer.paused){timer.paused=false;timer.end=Date.now()+timer.remaining*1000;}else{timer.remaining=Math.max(0,Math.ceil((timer.end-Date.now())/1000));timer.paused=true;}render();break;case'finish':finish();break;case'discard':if(confirm('Laufende Einheit unwiderruflich verwerfen?')){db.draft=null;save();timerStop();tab='home';render();}break;case'savebands':{const bands=$('#bands').value.split('\n').map(x=>x.trim()).filter(Boolean).slice(0,30);if(!bands.length){toast('Bitte mindestens ein Band eintragen.');break;}db.settings.bands=[...new Set(bands)];save();toast('Bänder gespeichert');break;}case'export':backup();break;case'coach-share':coachShare();break;case'coach-download':coachDownload();break;case'history':{const id=b.nextElementSibling?.value;const s=db.sessions.find(s=>s.id===id);if(s){alert(`${days[s.day]} · ${new Date(s.finished).toLocaleString('de-DE')}\n\n`+s.exercises.map(x=>{const ex=Object.values(db.plan).flat().find(e=>e.id===x.id);return `${ex?.name||x.id}: ${x.sets.filter(z=>z.done).map(z=>`${z.reps}×${z.kg}kg${z.band&&z.band!=='Ohne Unterstützung'?' ('+z.band+')':''}`).join(', ')}${x.pain!==''?' · Schmerz '+x.pain+'/10':''}${x.notes?' · '+x.notes:''}`;}).join('\n'));}break;}}});
 document.addEventListener('change',e=>{const el=e.target;if(el.dataset.set!==undefined){updateProp(num(el.dataset.set),el.dataset.prop,el.value);if(el.dataset.prop==='band')render();}else if(el.dataset.field){activeInfo().entry[el.dataset.field]=el.value;save();}else if(el.dataset.rest){const ex=Object.values(db.plan).flat().find(x=>x.id===el.dataset.rest);if(ex){ex.rest=Math.min(1800,Math.max(0,num(el.value)));save();}}else if(el.id==='care'){db.settings.care=el.checked;save();render();}else if(el.id==='chartExercise'){chartExercise=el.value;render();}else if(el.id==='chartMetric'){chartMetric=el.value;render();}else if(el.id==='importFile'&&el.files?.[0]){const file=el.files[0];file.text().then(t=>{try{const x=JSON.parse(t);if(!x||x.version!==1||!x.plan||!Array.isArray(x.sessions)||!x.settings)throw Error('Ungültiges Format');if(!confirm('Vorhandene lokale Daten durch dieses Backup ersetzen?'))return;db=x;currentExercise=0;save();tab='home';render();toast('Backup importiert');}catch(err){toast('Backup nicht lesbar oder ungültig.');}});}});
 document.addEventListener('input',e=>{const el=e.target;if(el.dataset.set!==undefined)updateProp(num(el.dataset.set),el.dataset.prop,el.value);else if(el.dataset.field){activeInfo().entry[el.dataset.field]=el.value;save();}});
 if('serviceWorker' in navigator && /^https?:$/.test(location.protocol))window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
