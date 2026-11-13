@@ -40,3 +40,14 @@ UPDATE VON VERSION 1.0 AUF 1.1
 - Push enthält jetzt zusätzlich 2 Sätze Seitheben, Pull behält 2 Sätze.
 - Unter Einstellungen > KI-Coach kann ein lesbarer Bericht geteilt/kopiert oder als .txt exportiert werden.
 - Der Bericht wird NICHT automatisch an ChatGPT gesendet; bitte im Chat einfügen oder hochladen.
+
+
+UPDATE 1.2.0
+- Einstellungen > Software-Updates > Auf Updates prüfen.
+- Versionsnummer erscheint im Einstellungsbereich.
+- Die App prüft beim Start auf neuere Versionen und lädt bei Bedarf neu.
+- Der Offline-Cache ist versioniert und wird beim Worker-Wechsel aktualisiert.
+- Daten bleiben im localStorage (KEY mein-training-v1), werden nicht durch das Update gelöscht.
+- Vor dem Hochladen auf GitHub bitte JSON-Backup auf dem iPhone erstellen.
+- Alle zehn Dateien AUS training-app ins Repository-Hauptverzeichnis laden.
+- Einmalige Migration aus Version 1.1: die bisherige PWA muss zunächst die neu bereitgestellte Version laden; ggf. zuerst die Webseite in Safari aufrufen, danach installierte App neu starten.
